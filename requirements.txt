@@ -12,3 +12,5 @@ transformers==4.55.4
 torch==2.8.0
 qdrant-client==1.15.1
 redis==6.4.0
+openai==1.102.0
+pytest==8.4.1
