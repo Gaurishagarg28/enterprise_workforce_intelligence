@@ -2,3 +2,13 @@ streamlit==1.48.1
 pandas==2.3.2
 numpy==2.3.2
 scikit-learn==1.7.1
+fastapi==0.116.1
+uvicorn[standard]==0.35.0
+pydantic==2.11.7
+langgraph==0.6.6
+langchain-core==0.3.74
+sentence-transformers==5.1.0
+transformers==4.55.4
+torch==2.8.0
+qdrant-client==1.15.1
+redis==6.4.0
