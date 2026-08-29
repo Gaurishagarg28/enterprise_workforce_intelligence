@@ -25,7 +25,6 @@ env/
 *.pth
 
 # Data
-data/raw/*
 data/processed/*
 data/predictions/*
 
