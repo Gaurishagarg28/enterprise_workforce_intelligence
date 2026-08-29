@@ -37,7 +37,7 @@ df, loaded_from = load_data()
 if df is None:
     st.error("Dataset not found.")
     st.write("For local/demo use, place `employee_attrition.csv` in `data/raw/`.")
-    st.write("For Render, upload the permitted demo CSV as a repository file named `employee_attrition.csv` or provide an equivalent deployment data source.")
+    st.write("For Render, provide the dataset through an allowed deployment-safe data source and keep the path consistent with the app configuration.")
     st.stop()
 
 model, metrics = get_model(df)
@@ -46,8 +46,9 @@ attrition_count = int((df["Attrition"] == "Yes").sum())
 attrition_rate = attrition_count / len(df) * 100
 avg_satisfaction = df["JobSatisfaction"].mean()
 
-# Score all employees so the dashboard can show predicted high-risk employees.
+# Score every employee so the dashboard can show model-predicted high-risk employees.
 all_probabilities = model.predict_proba(df[MODEL_FEATURES])[:, 1]
+
 
 def risk_label(probability: float) -> str:
     if probability >= 0.70:
@@ -55,6 +56,7 @@ def risk_label(probability: float) -> str:
     if probability >= 0.40:
         return "Medium"
     return "Low"
+
 
 risk_labels = pd.Series(all_probabilities).map(risk_label)
 high_risk_count = int((risk_labels == "High").sum())
@@ -79,11 +81,11 @@ with left:
         .mul(100)
         .sort_values(ascending=False)
     )
-    st.bar_chart(department_risk)
+    st.bar_chart(department_risk, width="stretch")
 
 with right:
     st.subheader("Actual Attrition Distribution")
-    st.bar_chart(df["Attrition"].value_counts())
+    st.bar_chart(df["Attrition"].value_counts(), width="stretch")
 
 st.divider()
 
@@ -125,7 +127,7 @@ r1.metric("Predicted Attrition Risk", f"{risk_percent:.1f}%")
 r2.metric("Risk Level", risk)
 r3.metric("Actual Attrition", str(selected["Attrition"].iloc[0]))
 
-st.dataframe(selected[display_columns], use_container_width=True, hide_index=True)
+st.dataframe(selected[display_columns], width="stretch", hide_index=True)
 
 st.divider()
 
