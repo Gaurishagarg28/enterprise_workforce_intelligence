@@ -8,7 +8,7 @@ class WorkforceLLMAgent:
     """LLM reasoning/explanation layer. Business-critical scores stay deterministic."""
 
     def __init__(self, model: str | None = None):
-        self.model = model or os.getenv("OPENAI_MODEL", "gpt-5.6-luna")
+        self.model = model or os.getenv("OPENAI_MODEL", "gpt-5.6")
         self._client = None
         api_key = os.getenv("OPENAI_API_KEY")
         if api_key:
