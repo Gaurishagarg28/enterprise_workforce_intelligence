@@ -3,6 +3,9 @@ from __future__ import annotations
 from typing import Iterable
 
 
+# Controlled MVP role taxonomy. These are role-level requirements, not claims about an
+# individual's certified skills. Employee skill inventory should replace inferred skills
+# when validated employee-level skill data is available.
 DEFAULT_ROLE_SKILLS = {
     "Sales Executive": {"Communication", "CRM", "Negotiation", "Analytics"},
     "Research Scientist": {"Python", "Statistics", "Machine Learning", "Experimentation"},
@@ -28,7 +31,8 @@ def readiness_score(required: Iterable[str], current: Iterable[str]) -> float:
     required_set = set(required)
     if not required_set:
         return 100.0
-    matched = len(required_set.intersection(set(current)))
+    current_set = set(current)
+    matched = len(required_set.intersection(current_set))
     return round(matched / len(required_set) * 100, 1)
 
 
@@ -38,8 +42,11 @@ def organization_skill_gaps(records: Iterable[dict]) -> list[dict]:
         for skill in record.get("skill_gap", []):
             counts[skill] = counts.get(skill, 0) + 1
 
-    output = []
-    for skill, count in sorted(counts.items(), key=lambda x: x[1], reverse=True):
-        severity = "HIGH" if count >= 100 else "MEDIUM" if count >= 50 else "LOW"
-        output.append({"skill": skill, "employees_missing": count, "severity": severity})
-    return output
+    return [
+        {
+            "skill": skill,
+            "employees_missing": count,
+            "severity": "HIGH" if count >= 100 else "MEDIUM" if count >= 50 else "LOW",
+        }
+        for skill, count in sorted(counts.items(), key=lambda item: item[1], reverse=True)
+    ]
