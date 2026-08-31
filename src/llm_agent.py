@@ -8,10 +8,10 @@ class WorkforceLLMAgent:
     """LLM explanation layer. Deterministic ML/business rules remain authoritative."""
 
     def __init__(self, model: str | None = None):
-        self.model = model or os.getenv("OPENAI_MODEL")
+        self.model = model or os.getenv("OPENAI_MODEL", "gpt-4o-mini")
         self._client = None
         api_key = os.getenv("OPENAI_API_KEY")
-        if api_key and self.model:
+        if api_key:
             try:
                 from openai import OpenAI
                 self._client = OpenAI(api_key=api_key)
@@ -25,8 +25,8 @@ class WorkforceLLMAgent:
     def explain_decision(self, intelligence: dict[str, Any]) -> str:
         if not self.enabled:
             return (
-                "LLM explanation is disabled. The deterministic decision layer returned "
-                f"{intelligence['recommendation']['decision']}."
+                "LLM explanation is disabled because OPENAI_API_KEY is not configured. "
+                "The deterministic workforce decision is still available."
             )
 
         prompt = (
