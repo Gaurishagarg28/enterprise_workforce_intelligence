@@ -1,139 +1,139 @@
-import streamlit as st
-import pandas as pd
 from pathlib import Path
 
-from src.train_model import train_attrition_model, MODEL_FEATURES
+import pandas as pd
+import streamlit as st
 
-st.set_page_config(
-    page_title="Enterprise Workforce Intelligence",
-    page_icon="👥",
-    layout="wide",
-)
+from src.agent_graph import build_workforce_graph
+from src.agentic_workforce import WorkforceOrchestrator
+from src.llm_agent import WorkforceLLMAgent
+from src.train_model import MODEL_FEATURES, train_attrition_model
+from src.transformer_matcher import semantic_skill_match
 
-DATA_PATHS = [
-    Path("data/raw/employee_attrition.csv"),
-    Path("employee_attrition.csv"),
-]
+st.set_page_config(page_title="Enterprise Workforce Intelligence", page_icon="🧠", layout="wide")
 
-st.title("AI Workforce Intelligence Platform")
-st.caption("Attrition prediction and workforce analytics MVP")
+DATA_PATH = Path("data/raw/employee_attrition.csv")
 
+st.title("🧠 Enterprise Workforce Intelligence")
+st.caption("From workforce risk prediction to explainable retain / reskill decisions")
 
 @st.cache_data
 def load_data():
-    for path in DATA_PATHS:
-        if path.exists():
-            return pd.read_csv(path), str(path)
-    return None, None
-
+    return pd.read_csv(DATA_PATH)
 
 @st.cache_resource
 def get_model(df):
     return train_attrition_model(df)
 
+@st.cache_resource
+def get_graph():
+    try:
+        return build_workforce_graph()
+    except Exception:
+        return None
 
-df, loaded_from = load_data()
-
-if df is None:
-    st.error("Dataset not found.")
-    st.write("For local/demo use, place `employee_attrition.csv` in `data/raw/`.")
-    st.write("For Render, provide the dataset through an allowed deployment-safe data source and keep the path consistent with the app configuration.")
+if not DATA_PATH.exists():
+    st.error("data/raw/employee_attrition.csv was not found.")
     st.stop()
 
+df = load_data()
 model, metrics = get_model(df)
 
-attrition_count = int((df["Attrition"] == "Yes").sum())
-attrition_rate = attrition_count / len(df) * 100
-avg_satisfaction = df["JobSatisfaction"].mean()
-
-# Score every employee so the dashboard can show model-predicted high-risk employees.
-all_probabilities = model.predict_proba(df[MODEL_FEATURES])[:, 1]
-
-
-def risk_label(probability: float) -> str:
-    if probability >= 0.70:
-        return "High"
-    if probability >= 0.40:
-        return "Medium"
-    return "Low"
-
-
-risk_labels = pd.Series(all_probabilities).map(risk_label)
-high_risk_count = int((risk_labels == "High").sum())
+probabilities = model.predict_proba(df[MODEL_FEATURES])[:, 1]
+high_risk = int((probabilities >= 0.70).sum())
+attrition_rate = float((df["Attrition"] == "Yes").mean() * 100)
 
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("Employees", f"{len(df):,}")
-c2.metric("Predicted High Risk", f"{high_risk_count:,}")
-c3.metric("Actual Attrition Rate", f"{attrition_rate:.1f}%")
-c4.metric("Avg Job Satisfaction", f"{avg_satisfaction:.2f}/4")
+c2.metric("High Risk", f"{high_risk:,}")
+c3.metric("Actual Attrition", f"{attrition_rate:.1f}%")
+c4.metric("ROC-AUC", f"{metrics['roc_auc']:.3f}")
 
-st.caption(f"Data loaded from: `{loaded_from}`")
 st.divider()
 
 left, right = st.columns(2)
-
 with left:
-    st.subheader("Actual Attrition Rate by Department")
-    department_risk = (
-        df.assign(AttritionFlag=(df["Attrition"] == "Yes").astype(int))
-        .groupby("Department")["AttritionFlag"]
-        .mean()
-        .mul(100)
-        .sort_values(ascending=False)
-    )
-    st.bar_chart(department_risk, width="stretch")
-
+    st.subheader("Attrition by Department")
+    rates = (df.assign(flag=(df["Attrition"] == "Yes").astype(int)).groupby("Department")["flag"].mean() * 100).sort_values(ascending=False)
+    st.bar_chart(rates)
 with right:
-    st.subheader("Actual Attrition Distribution")
-    st.bar_chart(df["Attrition"].value_counts(), width="stretch")
+    st.subheader("Model Performance")
+    st.write({k.upper(): round(v, 3) for k, v in metrics.items()})
+    st.caption("Stratified 20% holdout; class-balanced Logistic Regression.")
 
 st.divider()
+st.header("Agentic Employee Intelligence")
 
-st.subheader("Model Performance")
-m1, m2, m3, m4 = st.columns(4)
-m1.metric("Accuracy", f"{metrics['accuracy']:.3f}")
-m2.metric("Precision", f"{metrics['precision']:.3f}")
-m3.metric("Recall", f"{metrics['recall']:.3f}")
-m4.metric("ROC-AUC", f"{metrics['roc_auc']:.3f}")
-st.caption("Metrics use a stratified 20% holdout test set. The model uses class-balanced Logistic Regression because attrition is imbalanced.")
+selected_id = st.selectbox("Select EmployeeNumber", df["EmployeeNumber"].tolist())
+employee = df[df["EmployeeNumber"] == selected_id].iloc[[0]].copy()
+probability = float(model.predict_proba(employee[MODEL_FEATURES])[:, 1][0])
+role = str(employee["JobRole"].iloc[0])
 
-st.divider()
+# Current skill inventory is deliberately derived from observed fields, not fabricated employee certifications.
+current_skills = []
+if role in {"Research Scientist", "Research Director"}:
+    current_skills += ["Research", "Statistics"]
+if "Sales" in role:
+    current_skills += ["Communication", "CRM"]
+if "Manager" in role or "Director" in role:
+    current_skills += ["Leadership", "Communication"]
+if "OverTime" in employee and employee["OverTime"].iloc[0] == "No":
+    current_skills += ["Workload Management"]
 
-st.subheader("Employee Risk Scoring")
-identifier_column = "EmployeeNumber"
-display_columns = [
-    c for c in [
-        identifier_column,
-        "Age",
-        "Department",
-        "JobRole",
-        "OverTime",
-        "JobSatisfaction",
-        "MonthlyIncome",
-        "YearsAtCompany",
-    ] if c in df.columns
-]
+profile = {
+    "role": role,
+    "current_skills": sorted(set(current_skills)),
+}
 
-employee_options = df[identifier_column].tolist()
-selected_id = st.selectbox("Select EmployeeNumber", employee_options)
-selected = df[df[identifier_column] == selected_id].iloc[[0]].copy()
-
-risk_probability = float(model.predict_proba(selected[MODEL_FEATURES])[:, 1][0])
-risk_percent = risk_probability * 100
-risk = risk_label(risk_probability)
+# The deterministic core owns decisions; LangGraph is the orchestration layer.
+graph = get_graph()
+if graph:
+    try:
+        result = graph.invoke({"model": model, "employee": employee, "features": MODEL_FEATURES, "role": role, "current_skills": current_skills})["intelligence"]
+    except Exception:
+        result = WorkforceOrchestrator().run(model, employee, MODEL_FEATURES, role, current_skills)
+else:
+    result = WorkforceOrchestrator().run(model, employee, MODEL_FEATURES, role, current_skills)
 
 r1, r2, r3 = st.columns(3)
-r1.metric("Predicted Attrition Risk", f"{risk_percent:.1f}%")
-r2.metric("Risk Level", risk)
-r3.metric("Actual Attrition", str(selected["Attrition"].iloc[0]))
+r1.metric("Attrition Risk", f"{probability * 100:.1f}%")
+r2.metric("Risk Level", result["attrition"]["risk_level"])
+r3.metric("Recommended Action", result["recommendation"]["decision"])
 
-st.dataframe(selected[display_columns], width="stretch", hide_index=True)
+st.subheader("Why this employee needs attention")
+sc1, sc2 = st.columns(2)
+with sc1:
+    st.write("**Required skills**")
+    st.write(", ".join(result["skills"]["required_skills"]) or "None")
+    st.write("**Current inferred skills**")
+    st.write(", ".join(result["skills"]["current_skills"]) or "No validated skill record")
+with sc2:
+    st.metric("Readiness", f"{result['skills']['readiness']:.1f}%")
+    st.write("**Skill gap**")
+    st.write(", ".join(result["skills"]["skill_gap"]) or "No gap identified")
+    st.write("**Actions**")
+    for action in result["recommendation"]["actions"]:
+        st.write(f"• {action}")
 
-st.divider()
+st.subheader("Transformer Skill Matching")
+query = st.text_input("Try a target skill", value=(result["skills"]["skill_gap"][0] if result["skills"]["skill_gap"] else "Machine Learning"))
+catalog = sorted({s for values in __import__("src.skill_engine", fromlist=["DEFAULT_ROLE_SKILLS"]).DEFAULT_ROLE_SKILLS.values() for s in values})
+if st.button("Run semantic match"):
+    try:
+        matches = semantic_skill_match(query, catalog)
+        st.dataframe(pd.DataFrame(matches), hide_index=True, width="stretch")
+    except Exception as exc:
+        st.warning(f"Transformer model unavailable in this environment: {exc}")
+        st.info("The business decision layer remains deterministic and usable without the transformer download.")
 
-st.subheader("Current MVP Scope")
-st.write(
-    "This MVP implements validated IBM HR data, attrition analytics, a class-balanced Logistic Regression model, "
-    "employee-level risk scoring, and an interactive dashboard. Skill-gap analysis, personalized upskilling, career intelligence, "
-    "RAG, and agentic workflows are planned extensions and should be added only after their supporting data and business rules are validated."
-)
+st.subheader("LLM Decision Explanation")
+llm = WorkforceLLMAgent()
+if llm.enabled:
+    if st.button("Explain decision with LLM"):
+        st.write(llm.explain_decision(result))
+else:
+    st.info("Set OPENAI_API_KEY to enable the LLM explanation agent. Core scoring does not depend on an LLM.")
+
+with st.expander("Agent execution trace"):
+    st.json(result)
+
+st.caption("Human-in-the-loop: this prototype provides decision support, not automated employment decisions. Sensitive demographic attributes are not used by the recommendation layer.")
