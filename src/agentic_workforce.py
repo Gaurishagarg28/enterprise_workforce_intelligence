@@ -21,7 +21,11 @@ class AttritionAgent:
     def run(self, model, employee: pd.DataFrame, features: list[str]) -> AgentResult:
         probability = float(model.predict_proba(employee[features])[:, 1][0])
         level = "HIGH" if probability >= 0.70 else "MEDIUM" if probability >= 0.40 else "LOW"
-        return AgentResult(self.name, "success", {"probability": probability, "risk_level": level})
+        return AgentResult(self.name, "success", {
+            "probability": probability,
+            "risk_level": level,
+            "evidence": "Class-balanced Logistic Regression probability on validated HR features.",
+        })
 
 
 class SkillGapAgent:
@@ -37,6 +41,7 @@ class SkillGapAgent:
             "current_skills": sorted(set(current_skills)),
             "skill_gap": gap,
             "readiness": readiness,
+            "evidence": "Role requirements from the controlled MVP capability taxonomy; current skills are explicitly labelled inferred unless validated employee-skill data is supplied.",
         })
 
 
@@ -51,17 +56,23 @@ class RecommendationAgent:
                 actions.append(f"Build capability in {skill_gap[1]}")
         if attrition_level == "HIGH":
             actions.append("Prioritize retention conversation")
-        if readiness >= 70 and attrition_level == "HIGH":
+
+        if attrition_level == "HIGH" and readiness >= 70:
             decision = "RETAIN_AND_RESKILL"
         elif readiness >= 50:
             decision = "RESKILL"
         else:
             decision = "DEVELOP_OR_HIRE"
-        return AgentResult(self.name, "success", {"decision": decision, "actions": actions})
+
+        return AgentResult(self.name, "success", {
+            "decision": decision,
+            "actions": actions,
+            "evidence": "Transparent rule-based combination of attrition level, skill gap and readiness; requires human review.",
+        })
 
 
 class WorkforceOrchestrator:
-    """Deterministic orchestration layer; an LLM can be added as a planner without owning business rules."""
+    """Deterministic specialist agents; LangGraph provides workflow orchestration."""
 
     def __init__(self):
         self.attrition = AttritionAgent()
