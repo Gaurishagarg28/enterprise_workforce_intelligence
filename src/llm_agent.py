@@ -5,13 +5,13 @@ from typing import Any
 
 
 class WorkforceLLMAgent:
-    """LLM reasoning/explanation layer. Business-critical scores stay deterministic."""
+    """LLM explanation layer. Deterministic ML/business rules remain authoritative."""
 
     def __init__(self, model: str | None = None):
-        self.model = model or os.getenv("OPENAI_MODEL", "gpt-5.6")
+        self.model = model or os.getenv("OPENAI_MODEL")
         self._client = None
         api_key = os.getenv("OPENAI_API_KEY")
-        if api_key:
+        if api_key and self.model:
             try:
                 from openai import OpenAI
                 self._client = OpenAI(api_key=api_key)
@@ -25,15 +25,15 @@ class WorkforceLLMAgent:
     def explain_decision(self, intelligence: dict[str, Any]) -> str:
         if not self.enabled:
             return (
-                "LLM explanation is disabled. The deterministic decision layer returned: "
+                "LLM explanation is disabled. The deterministic decision layer returned "
                 f"{intelligence['recommendation']['decision']}."
             )
 
         prompt = (
-            "You are an HR workforce-intelligence explanation agent. Explain the supplied "
-            "decision using only the supplied structured facts. Do not invent employee facts, "
-            "do not make employment decisions, and do not expose sensitive attributes. "
-            "Return concise reasoning, key evidence, and suggested human-review questions.\n\n"
+            "You are an HR workforce-intelligence explanation agent. Use ONLY the supplied "
+            "structured facts. Do not invent employee facts, do not use sensitive demographic "
+            "attributes, and do not make an autonomous employment decision. Explain the result "
+            "with three short sections: Evidence, Recommended human action, Review questions.\n\n"
             f"Structured intelligence:\n{intelligence}"
         )
         response = self._client.responses.create(model=self.model, input=prompt)
