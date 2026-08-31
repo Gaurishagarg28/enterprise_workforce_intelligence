@@ -41,7 +41,7 @@ class SkillGapAgent:
             "current_skills": sorted(set(current_skills)),
             "skill_gap": gap,
             "readiness": readiness,
-            "evidence": "Role requirements from the controlled MVP capability taxonomy; current skills are explicitly labelled inferred unless validated employee-skill data is supplied.",
+            "evidence": "Role requirements are sourced from supplied O*NET essential-skills data when those source files are available; otherwise the controlled MVP fallback taxonomy is used.",
         })
 
 
