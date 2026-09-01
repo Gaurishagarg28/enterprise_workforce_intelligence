@@ -123,11 +123,16 @@ query = st.text_input("Find related capabilities", value=(result["skills"]["skil
 catalog = sorted({skill for skills in DEFAULT_ROLE_SKILLS.values() for skill in skills})
 if st.button("Find Semantically Related Skills"):
     try:
-        matches = semantic_skill_match(query, catalog)
-        if matches: st.dataframe(pd.DataFrame(matches), hide_index=True, width="stretch")
-        else: st.info("No semantic matches exceeded the configured similarity threshold.")
+        matches = semantic_skill_match(str(query), list(catalog))
     except Exception as exc:
-        st.warning(f"Transformer model unavailable: {exc}")
+        st.error("Transformer inference failed.")
+        st.caption(f"Technical detail: {type(exc).__name__}: {exc}")
+    else:
+        if matches:
+            st.success(f"Found {len(matches)} semantically related capabilities")
+            st.dataframe(pd.DataFrame(matches), hide_index=True, use_container_width=True)
+        else:
+            st.info("No semantic matches exceeded the configured similarity threshold.")
 
 st.markdown("<div class='section-title'>📚 Grounded HR Knowledge</div>", unsafe_allow_html=True)
 knowledge_query = st.text_input("Policy question", value="reskilling high risk employee")
