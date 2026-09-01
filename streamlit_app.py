@@ -11,18 +11,21 @@ from src.train_model import MODEL_FEATURES, train_attrition_model
 from src.transformer_matcher import semantic_skill_match
 
 st.set_page_config(page_title="Enterprise Workforce Intelligence", page_icon="🧠", layout="wide", initial_sidebar_state="expanded")
-
 DATA_PATH = Path("data/raw/employee_attrition.csv")
 
 st.markdown("""
 <style>
-.block-container {padding-top: 2rem; padding-bottom: 2rem;}
-.hero {padding: 1rem 0 1.5rem 0;}
-.hero h1 {margin-bottom: 0.25rem;}
-.hero p {font-size: 1.05rem; margin-top: 0;}
+.block-container {max-width: 1450px; padding-top: 2rem; padding-bottom: 3rem;}
+.hero {padding: 1.2rem 1.4rem; border: 1px solid rgba(128,128,128,.25); border-radius: 18px; margin-bottom: 1.4rem;}
+.hero h1 {font-size: 2.35rem; margin: 0 0 .35rem 0;}
+.hero p {font-size: 1.05rem; margin: 0; opacity: .78;}
+.section-title {font-size: 1.25rem; font-weight: 700; margin-top: .5rem;}
+.small-note {font-size: .86rem; opacity: .7;}
+div[data-testid="stMetric"] {border: 1px solid rgba(128,128,128,.22); padding: 1rem; border-radius: 14px;}
 </style>
 """, unsafe_allow_html=True)
-st.markdown("<div class='hero'><h1>🧠 Enterprise Workforce Intelligence</h1><p>From workforce risk to capability preservation: retain, reskill, or hire.</p></div>", unsafe_allow_html=True)
+
+st.markdown("<div class='hero'><h1>🧠 Enterprise Workforce Intelligence</h1><p>Predict risk → understand capability gaps → recommend retain, reskill, or hire → keep a human in the loop.</p></div>", unsafe_allow_html=True)
 
 if not DATA_PATH.exists():
     st.error("Dataset not found at data/raw/employee_attrition.csv")
@@ -50,37 +53,41 @@ actual_attrition_rate = float((df["Attrition"] == "Yes").mean() * 100)
 role_catalog = sorted(df["JobRole"].dropna().unique().tolist())
 
 with st.sidebar:
-    st.header("Workforce Controls")
+    st.header("⚙ Workforce Controls")
     selected_department = st.selectbox("Department", ["All"] + sorted(df["Department"].dropna().unique().tolist()))
     selected_role = st.selectbox("Role", ["All"] + role_catalog)
     risk_threshold = st.slider("High-risk threshold", 0.50, 0.90, 0.70, 0.05)
+    st.divider()
+    st.caption("Model: class-balanced Logistic Regression")
+    st.caption("LLM: OpenRouter → OpenAI → local fallback")
+    st.caption("Responsible AI: demographic attributes are excluded from recommendation logic.")
 
 filtered = df.copy()
 if selected_department != "All": filtered = filtered[filtered["Department"] == selected_department]
 if selected_role != "All": filtered = filtered[filtered["JobRole"] == selected_role]
 filtered_high_risk = int((model.predict_proba(filtered[MODEL_FEATURES])[:, 1] >= risk_threshold).sum())
 
-st.subheader("Executive Workforce Snapshot")
+st.markdown("<div class='section-title'>Executive Workforce Snapshot</div>", unsafe_allow_html=True)
 c1, c2, c3, c4 = st.columns(4)
-c1.metric("Employees", f"{len(filtered):,}")
+c1.metric("Employees in View", f"{len(filtered):,}")
 c2.metric("High-Risk Employees", f"{filtered_high_risk:,}")
 c3.metric("Actual Attrition", f"{actual_attrition_rate:.1f}%")
-c4.metric("Model ROC-AUC", f"{metrics['roc_auc']:.3f}")
-st.caption(f"Class-balanced Logistic Regression | Holdout ROC-AUC: {metrics['roc_auc']:.3f} | Global high-risk count at 70%: {high_risk_count}")
+c4.metric("ROC-AUC", f"{metrics['roc_auc']:.3f}")
+st.markdown(f"<div class='small-note'>Stratified 20% holdout • global high-risk count at 70%: {high_risk_count} • medium-risk: {medium_risk_count}</div>", unsafe_allow_html=True)
 st.divider()
 
-col1, col2 = st.columns([1.15, 0.85])
+col1, col2 = st.columns([1.2, .8])
 with col1:
-    st.subheader("Where is workforce risk concentrated?")
+    st.markdown("<div class='section-title'>Where is workforce risk concentrated?</div>", unsafe_allow_html=True)
     department_risk = (df.assign(AttritionFlag=(df["Attrition"] == "Yes").astype(int)).groupby("Department")["AttritionFlag"].mean().mul(100).sort_values(ascending=False))
-    st.bar_chart(department_risk)
+    st.bar_chart(department_risk, y_label="Actual attrition %")
 with col2:
-    st.subheader("Risk mix")
-    st.bar_chart(pd.Series({"High": high_risk_count, "Medium": medium_risk_count, "Low": len(df) - high_risk_count - medium_risk_count}))
+    st.markdown("<div class='section-title'>Risk mix</div>", unsafe_allow_html=True)
+    st.bar_chart(pd.Series({"High": high_risk_count, "Medium": medium_risk_count, "Low": len(df) - high_risk_count - medium_risk_count}), y_label="Employees")
 
 st.divider()
-st.header("Employee Decision Center")
-employee_id = st.selectbox("EmployeeNumber", df["EmployeeNumber"].tolist())
+st.markdown("<div class='section-title'>🎯 Employee Decision Center</div>", unsafe_allow_html=True)
+employee_id = st.selectbox("Select EmployeeNumber", df["EmployeeNumber"].tolist())
 employee = df[df["EmployeeNumber"] == employee_id].iloc[[0]].copy()
 role = str(employee["JobRole"].iloc[0])
 
@@ -90,32 +97,29 @@ if "Sales" in role: current_skills += ["Communication", "CRM"]
 if "Manager" in role or "Director" in role: current_skills += ["Leadership", "Communication"]
 if employee["OverTime"].iloc[0] == "No": current_skills += ["Workload Management"]
 
-with st.spinner("Running workforce agents..."):
+with st.spinner("Running workforce intelligence agents..."):
     result = graph.invoke({"model": model, "employee": employee, "features": MODEL_FEATURES, "role": role, "current_skills": current_skills})["intelligence"]
 
 m1, m2, m3, m4 = st.columns(4)
 m1.metric("Attrition Risk", f"{result['attrition']['probability'] * 100:.1f}%")
 m2.metric("Risk Level", result["attrition"]["risk_level"])
 m3.metric("Reskill Readiness", f"{result['skills']['readiness']:.1f}%")
-m4.metric("Recommended Action", result["recommendation"]["decision"])
+m4.metric("Action", result["recommendation"]["decision"])
 
 left, right = st.columns(2)
 with left:
-    st.subheader("Capability Profile")
-    st.write(f"**Current role:** {role}")
-    st.write("**Required capabilities:**")
-    st.write(", ".join(result["skills"]["required_skills"]))
-    st.write("**MVP inferred capabilities:**")
-    st.write(", ".join(result["skills"]["current_skills"]) or "No validated employee skill record")
+    st.markdown("**Capability Profile**")
+    st.write(f"Current role: **{role}**")
+    st.write("Required capabilities: " + (", ".join(result["skills"]["required_skills"]) or "None"))
+    st.write("Inferred capabilities: " + (", ".join(result["skills"]["current_skills"]) or "No validated employee skill record"))
 with right:
-    st.subheader("Workforce Decision")
-    st.write(f"**Capability gap:** {', '.join(result['skills']['skill_gap']) or 'No gap identified'}")
-    st.write("**Suggested actions:**")
+    st.markdown("**Recommended Intervention**")
+    st.write("Capability gap: **" + (", ".join(result["skills"]["skill_gap"]) or "No gap identified") + "**")
     for action in result["recommendation"]["actions"]: st.write(f"• {action}")
 
 st.divider()
-st.subheader("Transformer Skill Intelligence")
-query = st.text_input("Search for a related capability", value=(result["skills"]["skill_gap"][0] if result["skills"]["skill_gap"] else "Machine Learning"))
+st.markdown("<div class='section-title'>🤖 Transformer Skill Intelligence</div>", unsafe_allow_html=True)
+query = st.text_input("Find related capabilities", value=(result["skills"]["skill_gap"][0] if result["skills"]["skill_gap"] else "Machine Learning"))
 catalog = sorted({skill for skills in DEFAULT_ROLE_SKILLS.values() for skill in skills})
 if st.button("Find Semantically Related Skills"):
     try:
@@ -125,22 +129,29 @@ if st.button("Find Semantically Related Skills"):
     except Exception as exc:
         st.warning(f"Transformer model unavailable: {exc}")
 
-st.subheader("Grounded HR Knowledge")
+st.markdown("<div class='section-title'>📚 Grounded HR Knowledge</div>", unsafe_allow_html=True)
 knowledge_query = st.text_input("Policy question", value="reskilling high risk employee")
 knowledge = retrieve(knowledge_query)
 if knowledge:
     for source in knowledge: st.info(f"**{source['source']}** — {source['text']}")
-else: st.caption("No matching policy knowledge found.")
+else:
+    st.caption("No matching policy knowledge found.")
 
-st.subheader("LLM Explanation")
+st.markdown("<div class='section-title'>💬 Workforce Explanation Agent</div>", unsafe_allow_html=True)
 llm = WorkforceLLMAgent()
+st.caption(f"Provider status: **{llm.provider}**")
 if st.button("Generate Grounded Explanation"):
-    with st.spinner("Generating explanation..."):
+    with st.spinner("Generating grounded explanation..."):
         st.markdown(llm.explain_decision(result))
-    if not llm.enabled:
-        st.caption("The local deterministic fallback was used because the OpenAI client is unavailable.")
+    if llm.provider == "Local fallback":
+        st.caption("No LLM key is configured; the deterministic explanation layer was used.")
+    elif llm.provider == "OpenAI":
+        st.caption("OpenAI is configured. If quota or authentication fails, the app automatically falls back locally.")
+    else:
+        st.caption("OpenRouter is configured as the primary LLM provider; local fallback protects availability.")
 
-with st.expander("Agent trace / audit evidence"):
+with st.expander("🔎 Agent trace / audit evidence"):
     st.json(result)
 
-st.caption("Responsible AI: recommendations are decision-support signals. Human HR review is required before action.")
+st.divider()
+st.caption("Responsible AI: risk scores and recommendations are decision-support signals, not automated employment decisions. Human HR review is required before action. Sensitive demographic attributes are not used by the recommendation layer.")
